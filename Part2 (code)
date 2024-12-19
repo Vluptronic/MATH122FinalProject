@@ -1,0 +1,123 @@
+
+import sklearn
+import pandas as pd
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
+
+# Reload the training and testing sets
+training_set_path = 'Training_Set.csv'
+testing_set_path = 'Test_Set.csv'
+
+training_set = pd.read_csv(training_set_path)
+testing_set = pd.read_csv(testing_set_path)
+
+# Import Ridge Regression and related tools
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
+
+
+# Encode the TYPE column into numeric labels
+label_encoder = LabelEncoder()
+training_set['TYPE_NUM'] = label_encoder.fit_transform(training_set['TYPE'])
+# Encode test labels using the same encoder for consistency
+test_features = testing_set.drop(columns=['TYPE']).values
+test_true_labels = label_encoder.transform(testing_set['TYPE'])
+
+ridge_model = Ridge(alpha=1)  # alpha is the regularization strength
+ridge_model.fit(test_features,test_true_labels)
+# Predict using the Ridge regression model
+predicted_numeric_labels = np.round(ridge_model.predict(test_features)).astype(int)
+
+# Ensure predicted labels are consistent with the training label encoding
+predicted_numeric_labels = np.clip(predicted_numeric_labels, 0, len(label_encoder.classes_) - 1)
+predicted_labels = label_encoder.inverse_transform(predicted_numeric_labels)
+
+ridge_accuracy = accuracy_score(testing_set['TYPE'], predicted_labels)
+ridge_accuracy
+
+# Step 1: Calculate centroids for each diagnosis type
+diagnoses = training_set['TYPE'].unique()
+centroids = []
+for diagnosis in diagnoses:
+    # Extract features for the current diagnosis
+    diagnosis_data = training_set[training_set['TYPE'] == diagnosis].drop(columns=['TYPE']).values
+    # Compute the centroid (mean of features for the diagnosis)
+    centroids.append(np.mean(diagnosis_data, axis=0))
+
+# Convert centroids to a dictionary for easier mapping
+diagnosis_to_centroid = {diagnosis: centroid for diagnosis, centroid in zip(diagnoses, centroids)}
+
+# Step 2: Assign test data points to the nearest centroid and predict labels
+test_features = testing_set.drop(columns=['TYPE']).values
+true_labels = testing_set['TYPE']
+predicted_labels = []
+
+for point in test_features:
+    # Compute distances to all centroids
+    distances = {diagnosis: np.linalg.norm(point - centroid) for diagnosis, centroid in diagnosis_to_centroid.items()}
+    # Assign the diagnosis with the nearest centroid
+    predicted_labels.append(min(distances, key=distances.get))
+# Step 3: Evaluate overall accuracy
+overall_accuracy = accuracy_score(true_labels, predicted_labels)
+
+
+overall_accuracy
+
+# Let's Test Accuracy 
+from sklearn.metrics import accuracy_score
+test_features = testing_set.drop(columns=['TYPE']).values
+true_labels = testing_set['TYPE']
+
+# Map each diagnosis to its centroid from the training phase
+diagnosis_to_centroid = {diagnosis: centroid[0] for diagnosis, centroid in zip(diagnoses, centroids)}
+
+# Predict labels for the test set
+predicted_labels = []
+
+for point in test_features:
+    # Calculate distances to all centroids
+    distances = {diagnosis: np.linalg.norm(point - centroid) for diagnosis, centroid in diagnosis_to_centroid.items()}
+    # Assign the diagnosis with the closest centroid
+    predicted_labels.append(min(distances, key=distances.get))
+
+# Calculate accuracy
+accuracy = accuracy_score(true_labels, predicted_labels)
+
+accuracy
+# Recompute centroids for training data
+centroids = []
+for diagnosis in diagnoses:
+    diagnosis_data = training_set[training_set['TYPE'] == diagnosis].drop(columns=['TYPE']).values
+    kmean = sklearn.cluster.KMeans(n_clusters=1, init='k-means++', n_init=10, max_iter=300, tol=0.0001, random_state=42, algorithm='lloyd')
+    # Calculating kmean separately
+    kmean.fit(diagnosis_data)
+    centroids.append(kmean.cluster_centers_)
+
+# Map each diagnosis to its centroid
+diagnosis_to_centroid = {diagnosis: centroid[0] for diagnosis, centroid in zip(diagnoses, centroids)}
+
+# Calculate accuracy per diagnosis category in the test set
+category_accuracies = {}
+for diagnosis in diagnoses:
+    # First filter rows for the current diagnosis
+    category_data = testing_set[testing_set['TYPE'] == diagnosis]
+    
+    # Prepare features and true labels for this category
+    category_features = category_data.drop(columns=['TYPE']).values
+    category_labels = category_data['TYPE']
+    
+    # Predict labels for this category
+    category_predictions = []
+    for point in category_features:
+        distances = {diag: np.linalg.norm(point - centroid) for diag, centroid in diagnosis_to_centroid.items()}
+        category_predictions.append(min(distances, key=distances.get))
+    
+    # Calculate accuracy for this category
+    category_accuracy = accuracy_score(category_labels, category_predictions)
+    category_accuracies[diagnosis] = category_accuracy
+
+# Display accuracies by category
+category_accuracies_df = pd.DataFrame(category_accuracies.items(), columns=["Diagnosis", "Accuracy"])

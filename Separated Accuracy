@@ -1,0 +1,85 @@
+import sklearn.cluster
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
+# Load datasets
+training_set = pd.read_csv('~/Downloads/Training_Set.csv')
+testing_set = pd.read_csv('~/Downloads/Test Set 2.csv')
+
+# Prepare training data
+training_data = training_set.drop(columns=['TYPE'])
+diagnoses = training_set['TYPE'].unique()
+models = []
+centroids = []
+
+# Train KMeans for each diagnosis
+for diagnosis in diagnoses:
+    ind_diagnosis_set = training_set[training_set['TYPE'] == diagnosis]
+    red_ind_diagnosis_set = ind_diagnosis_set.drop(columns=['TYPE']).values
+    
+    # Use one cluster for each diagnosis
+    kmean = sklearn.cluster.KMeans(
+        n_clusters=1, init='k-means++', n_init='auto', max_iter=300, tol=0.0001, verbose=0,
+        random_state=None, copy_x=True, algorithm='lloyd'
+    ).fit(red_ind_diagnosis_set)
+    
+    models.append(kmean)
+    centroids.append(kmean.cluster_centers_[0])  # Only one cluster center per diagnosis
+    
+    # Plot clusters for visualization
+    plt.scatter(red_ind_diagnosis_set[:, 0], red_ind_diagnosis_set[:, 1], s=10, label=f"{diagnosis} Points")
+    plt.scatter(kmean.cluster_centers_[0, 0], kmean.cluster_centers_[0, 1], s=200, marker='x', c='red', label=f"{diagnosis} Centroid")
+
+plt.title('Diagnoses Clusters')
+plt.legend()
+plt.show()
+
+# Prepare test data
+test_data = testing_set.drop(columns=['TYPE'])
+test_labels = testing_set['TYPE'].values
+test_data = test_data.values  # Convert to numpy array
+
+# Predict the closest cluster for each test point with constraints
+predicted_labels = []
+for idx, test_point in enumerate(test_data):
+    distances = [np.linalg.norm(test_point - centroid) for centroid in centroids]
+    predicted_label = diagnoses[np.argmin(distances)]  # Choose the label of the closest centroid
+    
+    # Apply constraints: Rule-based reclassification
+    if testing_set.iloc[idx]['FEVER'] == 1:
+        if predicted_label == "ALLERGY":
+            predicted_label = "FLU"  # Fever implies it's not likely to be Allergy
+        elif predicted_label == "COLD":
+            predicted_label = "FLU"  # Fever often rules out common cold
+
+    predicted_labels.append(predicted_label)
+
+# Calculate accuracy and misclassification breakdown for each diagnosis
+accuracy_details = {}
+for true_label, predicted_label in zip(test_labels, predicted_labels):
+    if true_label not in accuracy_details:
+        accuracy_details[true_label] = {"correct": 0, "total": 0, "errors": {diag: 0 for diag in diagnoses}}
+    accuracy_details[true_label]["total"] += 1
+    if true_label == predicted_label:
+        accuracy_details[true_label]["correct"] += 1
+    else:
+        accuracy_details[true_label]["errors"][predicted_label] += 1
+
+# Print accuracy and misclassification breakdown for each diagnosis
+for diagnosis, details in accuracy_details.items():
+    total = details["total"]
+    correct = details["correct"]
+    correct_proportion = correct / total if total > 0 else 0
+    print(f"Diagnosis: {diagnosis}")
+    print(f"  Total: {total}")
+    print(f"  Correct: {correct} ({correct_proportion:.2%})")
+    print(f"  Misclassifications:")
+    for misdiagnosis, count in details["errors"].items():
+        if count > 0:
+            proportion = count / (total - correct) if total - correct > 0 else 0
+            print(f"    Misclassified as {misdiagnosis}: {count} ({proportion:.2%})")
+
+# Calculate and print overall accuracy
+overall_accuracy = np.mean(np.array(predicted_labels) == test_labels)
+print(f"\nOverall Clustering-based Prediction Accuracy: {overall_accuracy:.4f}")
